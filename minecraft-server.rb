@@ -74,6 +74,15 @@ class Minecraft::CommandExecutor
     call "setblock #{pos[:x].floor} #{pos[:y].floor} #{pos[:z].floor} #{name}", response: false
   end
 
+  def getblock pos
+    response = call "testforblock #{pos[:x].floor} #{pos[:y].floor} #{pos[:z].floor} minecraft:air"
+    if /^Successfully/ =~ response
+      'Air'
+    elsif /^The block at .+ is (?<name>[^ ]+)/ =~ response
+      name
+    end
+  end
+
   def summon name, pos
     call "summon #{name} #{pos[:x]} #{pos[:y]} #{pos[:z]}", response: false
   end
@@ -82,29 +91,6 @@ class Minecraft::CommandExecutor
     result = call("xp 0 @p[name=#{name},x=#{pos[:x].round},y=#{pos[:y].round},z=#{pos[:z].round},r=#{r.ceil}]")
     !!result.match(/^Given 0 experience to/)
   end
-
-  def find2 name, pos
-    r=4
-    until test name, pos, r
-      r*=2
-      return nil if r>=1024
-    end
-    x,y,z=pos[:x],pos[:y],pos[:z]
-    5.times{|i|
-      p [:t,i,r]
-      r2 = r/2
-      p2=[-1,1].product([-1,1]).product([-1,1]).map(&:flatten).map{|dx,dy,dz|
-        [x+dx*r/2,y+dy*r/2,z+dz*r/2]
-      }.find{|x2,y2,z2|
-        test name, {x:x2,y:y2,z:z2}, r2
-      }
-      break unless p2
-      r=r2
-      x,y,z=p2
-    }
-    {x:x,y:y,z:z}
-  end
-
 
   def stop
     call 'stop', response: false
@@ -115,30 +101,40 @@ end
 
 minecraft = Minecraft::CommandExecutor.new command
 before do
-  next unless request.content_type == 'application/json'
+  return unless request.content_type == 'application/json'
   body = HashWithIndifferentAccess.new JSON.parse request.body.read
-  define_singleton_method(:body){body}
+  body.each{|key, value|
+    params[key] ||= value
+  }
 end
+
+set :bind, '0.0.0.0'
 
 get '/find/:name' do
   minecraft.find(params[:name]).to_json
 end
 
 post '/move/:name' do
-  minecraft.move(params[:name], body[:position])
+  minecraft.move(params[:name], params[:position])
 end
 
-post '/setblock' do
-  body[:blocks].each{|block|
+post '/setblocks' do
+  params[:blocks].each{|block|
     minecraft.setblock(block[:name], block[:position])
   }
   nil
 end
 
+post '/getblocks' do
+  params[:positions].map{|pos|
+    minecraft.getblock pos
+  }.to_json
+end
+
 post '/summon' do
-  minecraft.summon(body[:name], body[:position])
+  minecraft.summon(params[:name], params[:position])
 end
 
 post '/call' do
-  minecraft.call(body[:command])
+  minecraft.call(params[:command]).to_s
 end
