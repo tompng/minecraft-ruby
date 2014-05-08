@@ -38,14 +38,16 @@ class Minecraft::CommandExecutor
     @queue << response
   end
 
-  def wait_for patterns
+  def wait_for patterns = nil
     timeout(0.1){
+      return @queue.deq if patterns.nil?
       loop do
         response = @queue.deq
         patterns.each{|pattern, block|
           match = pattern.match response
           if match
-            return (block.call response, match if block)
+
+            return block.is_a?(Proc) ? block.call(match) : block
           end
         }
       end
@@ -65,7 +67,7 @@ class Minecraft::CommandExecutor
   def find name
     call("tp #{name} ~0 ~0 ~0"){
       pattern, result, match = wait_for(
-        /^Teleported .+ to (?<x>[\d.-]+),(?<y>[\d.-]+),(?<z>[\d.-]+)/ => ->(text, match){
+        /^Teleported .+ to (?<x>[\d.-]+),(?<y>[\d.-]+),(?<z>[\d.-]+)/ => ->(match){
           {x: match[:x].to_f, y: match[:y].to_f, z: match[:z].to_f}  
         },
         /That player cannot be found/ => nil
@@ -102,12 +104,19 @@ class Minecraft::CommandExecutor
     call commands do
       positions.map{
         pattern, response, match = wait_for(
-          /^Successfully/ => ->{'Air'},
-          /^The block at .+ is (?<name>[^ ]+)/ => ->(text, match){
+          /^Successfully/ => 'Air',
+          /^The block at .+ is (?<name>[^ ]+)/ => ->(match){
             match[:name]
           }
         )
       }
+    end
+  end
+
+  def list
+    call 'list' do
+      num = wait_for(/There are (?<num>\d)\/\d+ players online:/ => ->(match){match[:num]})
+      num.to_i.times.map{wait_for} if num
     end
   end
 
@@ -140,16 +149,12 @@ post '/move/:name' do
 end
 
 post '/setblocks' do
-  params[:blocks].each{|block|
-    minecraft.setblock(block[:name], block[:position])
-  }
+  minecraft.setblocks(params[:blocks])
   nil
 end
 
 post '/getblocks' do
-  params[:positions].map{|pos|
-    minecraft.getblock pos
-  }.to_json
+  minecraft.getblocks{params[:positions]}.to_json
 end
 
 post '/summon' do
