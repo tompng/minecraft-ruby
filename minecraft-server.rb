@@ -14,11 +14,6 @@ module Minecraft
   end
 end
 
-module Minecraft
-  Events = []
-  Events << (/.+ joined the game$/)
-end
-
 
 class Minecraft::CommandExecutor
   def initialize command
@@ -30,7 +25,6 @@ class Minecraft::CommandExecutor
         @io.each_line do |line|
           p line
           next unless /^\[..:..:..\] \[Server thread\/INFO\]: (?<response>.+)$/ =~ line.chomp
-          next if Minecraft::Events.any?{|pattern|pattern =~ response}
           notify response
         end
         exit
@@ -48,9 +42,11 @@ class Minecraft::CommandExecutor
     timeout(0.1){
       loop do
         response = @queue.deq
-        patterns.each{|name, pattern|
+        patterns.each{|pattern, block|
           match = pattern.match response
-          return [name, response, match] if match  
+          if match
+            return (block.call response, match if block)
+          end
         }
       end
     }
@@ -69,12 +65,11 @@ class Minecraft::CommandExecutor
   def find name
     call("tp #{name} ~0 ~0 ~0"){
       pattern, result, match = wait_for(
-        found: /^Teleported .+ to (?<x>[\d.-]+),(?<y>[\d.-]+),(?<z>[\d.-]+)/,
-        not_found: /That player cannot be found/
+        /^Teleported .+ to (?<x>[\d.-]+),(?<y>[\d.-]+),(?<z>[\d.-]+)/ => ->(text, match){
+          {x: match[:x].to_f, y: match[:y].to_f, z: match[:z].to_f}  
+        },
+        /That player cannot be found/ => nil
       )
-      if pattern == :found
-        {x: match[:x].to_f, y: match[:y].to_f, z: match[:z].to_f}
-      end
     }
   rescue
   end
@@ -107,15 +102,11 @@ class Minecraft::CommandExecutor
     call commands do
       positions.map{
         pattern, response, match = wait_for(
-          air: /^Successfully/,
-          other: /^The block at .+ is (?<name>[^ ]+)/
+          /^Successfully/ => ->{'Air'},
+          /^The block at .+ is (?<name>[^ ]+)/ => ->(text, match){
+            match[:name]
+          }
         )
-        case pattern
-        when :air
-          'Air'
-        when :other
-          match[:name]
-        end
       }
     end
   end
