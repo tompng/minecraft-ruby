@@ -44,22 +44,38 @@ class Minecraft::CommandExecutor
     @queue << response
   end
 
-  def call command, option={}
-    p command
+  def wait_for patterns
+    timeout(0.1){
+      loop do
+        response = @queue.deq
+        patterns.each{|name, pattern|
+          match = pattern.match response
+          return [name, response, match] if match  
+        }
+      end
+    }
+  end
+
+  def call commands, &block
+    p commands
     @mutex.synchronize do
       @queue.clear
-      @io.puts command
-      unless option.key?(:response) && !option[:response]
-        return timeout(0.1){@queue.pop}
-      end
+      @io.puts commands
+      return block.call if block
     end
   rescue
   end
 
   def find name
-    if /^Teleported .+ to (?<x>[\d.-]+),(?<y>[\d.-]+),(?<z>[\d.-]+)/ =~ call("tp #{name} ~0 ~0 ~0")
-      {x: x.to_f, y: y.to_f, z: z.to_f}
-    end
+    call("tp #{name} ~0 ~0 ~0"){
+      pattern, result, match = wait_for(
+        found: /^Teleported .+ to (?<x>[\d.-]+),(?<y>[\d.-]+),(?<z>[\d.-]+)/,
+        not_found: /That player cannot be found/
+      )
+      if pattern == :found
+        {x: match[:x].to_f, y: match[:y].to_f, z: match[:z].to_f}
+      end
+    }
   rescue
   end
 
@@ -67,19 +83,40 @@ class Minecraft::CommandExecutor
     x = pos[:x] || (pos[:dx] ? "~#{pos[:dx]}" : '~0')
     y = pos[:y] || (pos[:dy] ? "~#{pos[:dy]}" : '~0')
     z = pos[:z] || (pos[:dz] ? "~#{pos[:dz]}" : '~0')
-    call "tp #{name} #{x} #{y} #{z}", response: false
+    call "tp #{name} #{x} #{y} #{z}"
   end
 
-  def setblock name, pos
-    call "setblock #{pos[:x].floor} #{pos[:y].floor} #{pos[:z].floor} #{name}", response: false
+  def setblocks blocks
+    conds = blocks.select{|block|block[:if]}
+    unless conds.empty?
+      positions = conds.map{|block|block[:position]}
+      blockinfo = Hash[positions.zip(getblocks positions)]
+    end
+    commands = blocks.map{|block|
+      name, pos, = block[:name], block[:position]
+      next if block[:if] && blockinfo[pos] != block[:if]
+      "setblock #{pos[:x].floor} #{pos[:y].floor} #{pos[:z].floor} #{name}"
+    }
+    call commands.compact
   end
 
-  def getblock pos
-    response = call "testforblock #{pos[:x].floor} #{pos[:y].floor} #{pos[:z].floor} minecraft:air"
-    if /^Successfully/ =~ response
-      'Air'
-    elsif /^The block at .+ is (?<name>[^ ]+)/ =~ response
-      name
+  def getblocks positions
+    commands = positions.map{|pos|
+      "testforblock #{pos[:x].floor} #{pos[:y].floor} #{pos[:z].floor} minecraft:air"
+    }
+    call commands do
+      positions.map{
+        pattern, response, match = wait_for(
+          air: /^Successfully/,
+          other: /^The block at .+ is (?<name>[^ ]+)/
+        )
+        case pattern
+        when :air
+          'Air'
+        when :other
+          match[:name]
+        end
+      }
     end
   end
 
@@ -87,19 +124,12 @@ class Minecraft::CommandExecutor
     call "summon #{name} #{pos[:x]} #{pos[:y]} #{pos[:z]}", response: false
   end
 
-  def test name, pos, r
-    result = call("xp 0 @p[name=#{name},x=#{pos[:x].round},y=#{pos[:y].round},z=#{pos[:z].round},r=#{r.ceil}]")
-    !!result.match(/^Given 0 experience to/)
-  end
-
-  def stop
-    call 'stop', response: false
-  end
-
 end
 
 
 minecraft = Minecraft::CommandExecutor.new command
+minecraft.instance_eval{binding.pry}
+
 before do
   return unless request.content_type == 'application/json'
   body = HashWithIndifferentAccess.new JSON.parse request.body.read
