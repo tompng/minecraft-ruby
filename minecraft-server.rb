@@ -66,7 +66,7 @@ class Minecraft::CommandExecutor
 
   def find name
     call("tp #{name} ~0 ~0 ~0"){
-      pattern, result, match = wait_for(
+      wait_for(
         /^Teleported .+ to (?<x>[\d.-]+),(?<y>[\d.-]+),(?<z>[\d.-]+)/ => ->(match){
           {x: match[:x].to_f, y: match[:y].to_f, z: match[:z].to_f}  
         },
@@ -84,7 +84,7 @@ class Minecraft::CommandExecutor
   end
 
   def setblocks blocks
-    conds = blocks.select{|block|block[:if]}
+    conds = blocks.select{|block|block[:if]||block[:unless]}
     unless conds.empty?
       positions = conds.map{|block|block[:position]}
       blockinfo = Hash[positions.zip(getblocks positions)]
@@ -92,25 +92,42 @@ class Minecraft::CommandExecutor
     commands = blocks.map{|block|
       name, pos, = block[:name], block[:position]
       next if block[:if] && blockinfo[pos] != block[:if]
+      next if block[:unless] && blockinfo[pos] == block[:unless]
       "setblock #{pos[:x].floor} #{pos[:y].floor} #{pos[:z].floor} #{name}"
     }
     call commands.compact
   end
 
   def getblocks positions
-    commands = positions.map{|pos|
-      "testforblock #{pos[:x].floor} #{pos[:y].floor} #{pos[:z].floor} minecraft:air"
+    positions = positions.map{|pos|
+      {
+        x: pos[:x].floor,
+        y: pos[:y].floor,
+        z: pos[:z].floor
+      }
     }
+    commands = positions.map{|pos|
+      "testforblock #{pos[:x]} #{pos[:y]} #{pos[:z]} minecraft:air"
+    }
+    pos_blocks = {}
+    mpos = ->(m){{x: m[:x].to_i, y: m[:y].to_i, z: m[:z].to_i}}
     call commands do
-      positions.map{
-        pattern, response, match = wait_for(
-          /^Successfully/ => 'Air',
-          /^The block at .+ is (?<name>[^ ]+)/ => ->(match){
-            match[:name]
+      commands.size.times{
+        wait_for(
+          /Cannot test for block outside of the world/ => nil,
+          /^Successfully found the block at (?<x>-?\d+),(?<y>-?\d+),(?<z>-?\d+)/ => ->(match){
+            pos_blocks[mpos[match]] = 'Air'
+          },
+          /^The block at (?<x>-?\d+),(?<y>-?\d+),(?<z>-?\d+) is (?<name>.+) \(expected/ => ->(match){
+            /^minecraft:(?<name>.*)$/ =~ match[:name] ||
+            /^tile\.(?<name>.*)\.name$/ =~ match[:name] ||
+            name = match[:name]
+            pos_blocks[mpos[match]] = name.scan(/[a-zA-Z0-9]+/).map(&:capitalize).join
           }
         )
       }
     end
+    positions.map{|pos|pos_blocks[pos]}
   end
 
   def list
@@ -121,14 +138,14 @@ class Minecraft::CommandExecutor
   end
 
   def summon name, pos
-    call "summon #{name} #{pos[:x]} #{pos[:y]} #{pos[:z]}", response: false
+    call "summon #{name} #{pos[:x]} #{pos[:y]} #{pos[:z]}"
   end
 
 end
 
 
 minecraft = Minecraft::CommandExecutor.new command
-minecraft.instance_eval{binding.pry}
+Thread.new{minecraft.instance_eval{binding.pry}}
 
 before do
   return unless request.content_type == 'application/json'
@@ -154,7 +171,7 @@ post '/setblocks' do
 end
 
 post '/getblocks' do
-  minecraft.getblocks{params[:positions]}.to_json
+  a=minecraft.getblocks(params[:positions]).to_json
 end
 
 post '/summon' do
