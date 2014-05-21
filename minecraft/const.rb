@@ -1,7 +1,7 @@
 module Minecraft
   module Const
     Monsters = %w(Zombie Skeleton Creeper Enderman Slime Spider Witch Silverfish CaveSpider Ghast EnderDragon)
-    Animals = %w(Chicken Cow Pig Sheep Squid Snowman Villager Wolf MushroomCow)
+    Animals = %w(Chicken Cow Pig Sheep Squid SnowMan Villager Wolf MushroomCow)
     Objects = %w(Boat Minecart)
 
     BlockInfo = {
