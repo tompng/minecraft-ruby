@@ -4,10 +4,8 @@ minecraft-ruby
 minecraftをrubyでいじってあそぼ
 
 
-## server
-- minecraft-server***.jarの標準入力にコマンドを叩き込むためのwrapper
-- sinatraでget/post apiを提供
+- minecraft-server.jarをrconを有効化して起動する
 
-## client
--  get/post apiを叩く奴
+
+- ruby minecraft-client.rb で繋いであそぶ
 

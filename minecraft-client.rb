@@ -130,9 +130,9 @@ class MinecraftClient < RconClient
   end
 
   def list
-    call 'list'
-    /There are (?<num>\d)\/\d+ players online:/
-    num.to_i.times.map{wait_for} if num
+    if /There are \d\/\d+ players online:(?<names>.*)/ =~ call('list')
+      names.split(/, \n/)
+    end
   end
 
   def summon name, pos
