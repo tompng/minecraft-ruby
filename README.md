@@ -4,7 +4,12 @@ minecraft-ruby
 minecraftをrubyでいじってあそぼ
 
 ## 1. サーバ設定
-- minecraft-server.jarをrconを有効化して起動する
+- rconオプションを有効化してminecraft_server.***.jarを起動する
+```
+#server.propertiesにこの2行を追加
+enable-rcon=true
+rcon.password=hoge
+```
 
 ## 2. ruby minecraft-client.rb で繋いであそぶ
 
