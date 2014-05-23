@@ -138,7 +138,8 @@ module Minecraft
 
     def summon name, pos
       x,y,z = PointUtil.conv_position(pos)
-      call "summon #{name} #{x} #{y} #{z}"
+      dx,dy,dz = 3.times.map{rand(-0.1..0.1)}
+      call "summon #{name} #{x+dx} #{y+dy} #{z+dz}"
     end
 
     def getblock position
